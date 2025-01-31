@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User API Documentation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .endpoint {
+            background: #f4f4f4;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .method {
+            font-weight: bold;
+            color: #2c5282;
+        }
+    </style>
+</head>
+<body>
+    <h1>User API Documentation</h1>
+    
+    <div class="content">
+        <p>Welcome to the User API documentation. This API provides endpoints for user management including registration, authentication, and search functionality.</p>
+        
+        <div class="endpoint">
+            <h2>Register User</h2>
+            <p><span class="method">POST</span> /api/users/register</p>
+            <p>Register a new user with username, email, and password.</p>
+        </div>
+
+        <div class="endpoint">
+            <h2>Login User</h2>
+            <p><span class="method">POST</span> /api/users/login</p>
+            <p>Authenticate user with email and password.</p>
+        </div>
+
+        <div class="endpoint">
+            <h2>Search Users</h2>
+            <p><span class="method">GET</span> /api/users/search</p>
+            <p>Search for users using query parameters.</p>
+        </div>
+    </div>
+
+    <footer>
+        <p style="text-align: center; margin-top: 40px; color: #666;">
+            API Version 1.0 | Running on Port 3000
+        </p>
+    </footer>
+</body>
+</html>

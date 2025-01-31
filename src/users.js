@@ -1,7 +1,8 @@
 // Import necessary modules
 import express from 'express';
 import bcrypt from 'bcrypt';
-import pool from './db.js';
+import { db } from '../firebase.js';
+import { collection, query, where, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 const router = express.Router();
 
@@ -10,14 +11,26 @@ router.post('/register', async (req, res) => {
     try {
         const { username, email, password } = req.body;
         
-        // Check if user exists
-        const userExists = await pool.query(
-            'SELECT * FROM users WHERE email = $1',
-            [email]
-        );
+        if (!username || !email || !password) {
+            return res.status(400).json({ message: 'All fields are required' });
+        }
 
-        if (userExists.rows.length > 0) {
-            return res.status(400).json({ message: 'User already exists' });
+        console.log('Attempting to register user:', { username, email });
+        
+        // Check if user exists
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('email', '==', email));
+        
+        try {
+            const querySnapshot = await getDocs(q);
+            console.log('User search completed');
+            
+            if (!querySnapshot.empty) {
+                return res.status(400).json({ message: 'User already exists' });
+            }
+        } catch (error) {
+            console.error('Error checking existing user:', error);
+            throw error;
         }
 
         // Hash password
@@ -25,19 +38,30 @@ router.post('/register', async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, salt);
 
         // Create user
-        const newUser = await pool.query(
-            'INSERT INTO users (username, email, password) VALUES ($1, $2, $3) RETURNING *',
-            [username, email, hashedPassword]
-        );
+        try {
+            const newUser = await addDoc(usersRef, {
+                username,
+                email,
+                password: hashedPassword,
+                created_at: new Date()
+            });
+            console.log('User created successfully with ID:', newUser.id);
 
-        res.status(201).json({
-            id: newUser.rows[0].id,
-            username: newUser.rows[0].username,
-            email: newUser.rows[0].email
-        });
+            res.status(201).json({
+                id: newUser.id,
+                username,
+                email
+            });
+        } catch (error) {
+            console.error('Error creating new user:', error);
+            throw error;
+        }
     } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ message: 'Server error' });
+        console.error('Registration error:', err);
+        res.status(500).json({ 
+            message: 'Server error', 
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined 
+        });
     }
 });
 
@@ -47,25 +71,27 @@ router.post('/login', async (req, res) => {
         const { email, password } = req.body;
 
         // Check if user exists
-        const user = await pool.query(
-            'SELECT * FROM users WHERE email = $1',
-            [email]
-        );
-
-        if (user.rows.length === 0) {
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('email', '==', email));
+        const querySnapshot = await getDocs(q);
+        
+        if (querySnapshot.empty) {
             return res.status(400).json({ message: 'Invalid credentials' });
         }
 
+        const userDoc = querySnapshot.docs[0];
+        const user = userDoc.data();
+
         // Validate password
-        const validPassword = await bcrypt.compare(password, user.rows[0].password);
+        const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword) {
             return res.status(400).json({ message: 'Invalid credentials' });
         }
 
         res.json({
-            id: user.rows[0].id,
-            username: user.rows[0].username,
-            email: user.rows[0].email
+            id: userDoc.id,
+            username: user.username,
+            email: user.email
         });
     } catch (err) {
         console.error(err.message);
@@ -76,12 +102,22 @@ router.post('/login', async (req, res) => {
 // Search for users
 router.get('/search', async (req, res) => {
     try {
-        const { query } = req.query;
-        const users = await pool.query(
-            'SELECT id, username, email FROM users WHERE username ILIKE $1',
-            [`%${query}%`]
-        );
-        res.json(users.rows);
+        const { query: searchQuery } = req.query;
+        const usersRef = collection(db, 'users');
+        const querySnapshot = await getDocs(usersRef);
+        
+        // Filter users whose username includes the search query (case-insensitive)
+        const users = querySnapshot.docs
+            .map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }))
+            .filter(user => 
+                user.username.toLowerCase().includes(searchQuery.toLowerCase())
+            )
+            .map(({ id, username, email }) => ({ id, username, email }));
+
+        res.json(users);
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ message: 'Server error' });
@@ -94,19 +130,16 @@ router.put('/update/:id', async (req, res) => {
         const { id } = req.params;
         const { username, email } = req.body;
 
-        const updateUser = await pool.query(
-            'UPDATE users SET username = $1, email = $2 WHERE id = $3 RETURNING *',
-            [username, email, id]
-        );
-
-        if (updateUser.rows.length === 0) {
-            return res.status(404).json({ message: 'User not found' });
-        }
+        const userRef = doc(db, 'users', id);
+        await updateDoc(userRef, {
+            username,
+            email
+        });
 
         res.json({
-            id: updateUser.rows[0].id,
-            username: updateUser.rows[0].username,
-            email: updateUser.rows[0].email
+            id,
+            username,
+            email
         });
     } catch (err) {
         console.error(err.message);
@@ -118,12 +151,9 @@ router.put('/update/:id', async (req, res) => {
 router.delete('/delete/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const deleteUser = await pool.query('DELETE FROM users WHERE id = $1', [id]);
+        const userRef = doc(db, 'users', id);
+        await deleteDoc(userRef);
         
-        if (deleteUser.rowCount === 0) {
-            return res.status(404).json({ message: 'User not found' });
-        }
-
         res.json({ message: 'User deleted successfully' });
     } catch (err) {
         console.error(err.message);
